@@ -4,10 +4,10 @@
 version: "3"
 
 tunnels:
-  # Ana SSH tüneli (port 22)
+  # Ana SSH tüneli (port 2222 — tmshkr/ngrok-ssh default)
   ssh:
     proto: tcp
-    addr: 22
+    addr: 2222
 
   # OPSİYONEL ek HTTP tüneli — bir web server çalıştırırsan dışarıdan preview için.
   # Yorumu açıp kullan. ngrok free = 1 eş zamanlı tunnel, yani ya SSH ya HTTP.
