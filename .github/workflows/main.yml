@@ -1,55 +1,81 @@
-name: RDP
+name: Remote Shell (Ubuntu + SSH + ngrok)
+
+# Bu workflow SuperNinja için Ubuntu makinede SSH tüneli açar.
+# Ubuntu-latest PUBLIC repo'da: 4 CPU / 16 GB RAM / 14 GB SSD
+# 6 saatlik job limitini sleep ile doldururuz.
+#
+# Kullanım:
+#   1. Repo PUBLIC olsun (16 GB RAM için)
+#   2. NGROK_AUTHTOKEN secret'ı eklensin
+#   3. Actions → "Remote Shell (Ubuntu + SSH + ngrok)" → Run workflow
+#   4. Loglarda "SSH READY: tcp://..." satırını bekle
+#   5. O adresi SuperNinja'ya ver
 
 on:
   workflow_dispatch:
+    inputs:
+      keep_alive_minutes:
+        description: 'Oturum süresi (dakika). Max 360.'
+        required: false
+        default: '360'
+      setup_profile:
+        description: 'Hangi araç seti kurulsun? (data|ml|web|minimal)'
+        required: false
+        default: 'data'
 
 jobs:
-  rdp-job:
-    runs-on: windows-latest
+  remote-shell:
+    # PUBLIC repo = 16 GB RAM. Private = 8 GB. Public olmasını öneriyoruz.
+    runs-on: ubuntu-latest
     timeout-minutes: 360
 
     steps:
-      - name: Enable RDP
-        run: |
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
-          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-          Restart-Service -Name TermService -Force
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-      - name: Create RDP User
+      - name: Show machine specs
         run: |
-          $password = -join ((33..126) | Get-Random -Count 16 | % {[char]$_})
-          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
-          New-LocalUser -Name "RDP" -Password $securePass -AccountNeverExpires
-          Add-LocalGroupMember -Group "Administrators" -Member "RDP"
-          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP"
-          echo "RDP_USER=RDP" >> $env:GITHUB_ENV
-          echo "RDP_PASS=$password" >> $env:GITHUB_ENV
+          echo "=== MAKİNE SPECLERİ ==="
+          echo "CPU: $(nproc) çekirdek"
+          echo "RAM: $(free -h | awk '/^Mem:/ {print $2}')"
+          echo "Disk: $(df -h / | awk 'NR==2 {print $2}')"
+          echo "OS: $(lsb_release -ds 2>/dev/null || cat /etc/os-release | grep PRETTY_NAME)"
+          echo "======================"
 
-      - name: Install Tailscale
+      - name: Run setup script
         run: |
-          $url = "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi"
-          $out = "$env:TEMP\tailscale.msi"
-          Invoke-WebRequest -Uri $url -OutFile $out
-          Start-Process msiexec.exe -ArgumentList "/i $out /quiet /norestart" -Wait
+          chmod +x setup.sh
+          ./setup.sh "${{ github.event.inputs.setup_profile }}"
 
-      - name: Connect Tailscale
+      - name: Configure SSH server
         run: |
-          & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-runner-${{ github.run_id }}
-          $ip = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
-          echo "TS_IP=$ip" >> $env:GITHUB_ENV
+          # SSH host anahtarları
+          sudo rm -f /etc/ssh/ssh_host_*
+          sudo ssh-keygen -A
 
-      - name: Show Connection Info
-        run: |
-          Write-Host "`n============================"
-          Write-Host "✅ RDP Connected Successfully"
-          Write-Host "IP Address (Tailscale): $env:TS_IP"
-          Write-Host "Username: $env:RDP_USER"
-          Write-Host "Password: $env:RDP_PASS"
-          Write-Host "============================`n"
+          # Şifresiz sudo olan runner kullanıcısı için SSH ayarı
+          sudo sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+          sudo sed -i 's/^#\?PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
 
-      - name: Keep Alive
+          # Servisi başlat
+          sudo service ssh restart || sudo systemctl restart ssh || true
+          echo "SSH servisi hazır"
+
+      - name: Open ngrok SSH tunnel
+        id: ngrok
+        uses: tmshkr/ngrok-ssh@latest
+        with:
+          NGROK_AUTHTOKEN: ${{ secrets.NGROK_AUTHTOKEN }}
+          NGROK_CONFIG_FILE: ngrok.yml
+          WAIT_FOR_CONNECTION: 'true'
+          TIMEOUT: ${{ github.event.inputs.keep_alive_minutes }}
+
+      - name: Keep alive
         run: |
-          while ($true) {
-            Write-Host "[$(Get-Date)] RDP Running..."
-            Start-Sleep -Seconds 300
-          }
+          echo "=== SSH READY — SuperNinja bağlanabilir ==="
+          echo "Bağlantı bilgileri yukarıdaki ngrok adımının loglarında."
+          echo "ngrok dashboard: https://dashboard.ngrok.cloud/cloud-edge/endpoints"
+          echo "=========================================="
+          KEEP=$(( ${{ github.event.inputs.keep_alive_minutes }} ))
+          echo "Oturum ${KEEP} dakika açık kalacak..."
+          sleep ${KEEP}m

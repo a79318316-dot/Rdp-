@@ -1,0 +1,17 @@
+# Secrets ve geçici dosyalar
+.env
+*.pem
+*.key
+id_*
+known_hosts
+.ssh/
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
