@@ -2,14 +2,19 @@ name: Remote Shell (Ubuntu + SSH + ngrok)
 
 # Bu workflow SuperNinja için Ubuntu makinede SSH tüneli açar.
 # Ubuntu-latest PUBLIC repo'da: 4 CPU / 16 GB RAM / 14 GB SSD
-# 6 saatlik job limitini sleep ile doldururuz.
+#
+# DÜZELTME: tmshkr/ngrok-ssh action'ın gerçek inputları kullanıldı:
+#   - SSH_CLIENT_PUBLIC_KEY (SuperNinja'nın public key'i gömülü)
+#   - SSH_PORT (default 2222)
+#   - WAIT_FOR_CONNECTION (TIMEOUT desteklenmiyor → keep-alive step ile çözdük)
+#   - USE_GITHUB_ACTOR_KEY: false (GitHub'da key yok, hata veriyordu)
 #
 # Kullanım:
 #   1. Repo PUBLIC olsun (16 GB RAM için)
 #   2. NGROK_AUTHTOKEN secret'ı eklensin
-#   3. Actions → "Remote Shell (Ubuntu + SSH + ngrok)" → Run workflow
-#   4. Loglarda "SSH READY: tcp://..." satırını bekle
-#   5. O adresi SuperNinja'ya ver
+#   3. Actions → "Remote Shell" → Run workflow
+#   4. Loglarda ngrok tunnel adresini bekle
+#   5. Adresi SuperNinja'ya ver
 
 on:
   workflow_dispatch:
@@ -25,7 +30,7 @@ on:
 
 jobs:
   remote-shell:
-    # PUBLIC repo = 16 GB RAM. Private = 8 GB. Public olmasını öneriyoruz.
+    # PUBLIC repo = 16 GB RAM. Private = 8 GB.
     runs-on: ubuntu-latest
     timeout-minutes: 360
 
@@ -47,35 +52,42 @@ jobs:
           chmod +x setup.sh
           ./setup.sh "${{ github.event.inputs.setup_profile }}"
 
-      - name: Configure SSH server
-        run: |
-          # SSH host anahtarları
-          sudo rm -f /etc/ssh/ssh_host_*
-          sudo ssh-keygen -A
-
-          # Şifresiz sudo olan runner kullanıcısı için SSH ayarı
-          sudo sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
-          sudo sed -i 's/^#\?PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
-
-          # Servisi başlat
-          sudo service ssh restart || sudo systemctl restart ssh || true
-          echo "SSH servisi hazır"
-
       - name: Open ngrok SSH tunnel
         id: ngrok
         uses: tmshkr/ngrok-ssh@latest
         with:
           NGROK_AUTHTOKEN: ${{ secrets.NGROK_AUTHTOKEN }}
           NGROK_CONFIG_FILE: ngrok.yml
+          # SuperNinja'nın public key'i — private key bende (sandbox'ta).
+          # Bu sayede GitHub'da SSH key olmasına gerek yok.
+          SSH_CLIENT_PUBLIC_KEY: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFxZcYzj5RHMRY8+rEdLKt2rQREJIwCwSmtJCeoTesYA superninja-remote-shell'
+          # GitHub actor key kullanma (hesapta key yok, hata veriyordu)
+          USE_GITHUB_ACTOR_KEY: 'false'
+          # SSH port 2222 (action default)
+          SSH_PORT: '2222'
+          # Sen bağlanana kadar bekle
           WAIT_FOR_CONNECTION: 'true'
-          TIMEOUT: ${{ github.event.inputs.keep_alive_minutes }}
+
+      - name: Print connection info
+        run: |
+          echo "============================================"
+          echo "✅ SSH READY — SuperNinja bağlanabilir"
+          echo "============================================"
+          echo "ngrok tunnel bilgileri (yukarıdaki ngrok adımının loglarında):"
+          echo "  - Host: 0.tcp.eu.ngrok.io (veya benzeri — loglardan al)"
+          echo "  - Port: loglarda görünen port"
+          echo "  - User: ${{ steps.ngrok.outputs.SSH_USER }}"
+          echo "  - SSH komutu:"
+          echo "    ssh -i ~/.ssh/id_ed25519 -p <PORT> <USER>@<HOST>"
+          echo ""
+          echo "ngrok dashboard: https://dashboard.ngrok.cloud/cloud-edge/endpoints"
+          echo "============================================"
+          echo ""
+          echo "Bu satırdan itibaren SuperNinja'nın bağlanması bekleniyor..."
+          echo "(WAIT_FOR_CONNECTION=true → bağlanınca workflow devam eder)"
 
       - name: Keep alive
         run: |
-          echo "=== SSH READY — SuperNinja bağlanabilir ==="
-          echo "Bağlantı bilgileri yukarıdaki ngrok adımının loglarında."
-          echo "ngrok dashboard: https://dashboard.ngrok.cloud/cloud-edge/endpoints"
-          echo "=========================================="
           KEEP=$(( ${{ github.event.inputs.keep_alive_minutes }} ))
-          echo "Oturum ${KEEP} dakika açık kalacak..."
+          echo "Oturum ${KEEP} dakika açık kalacak (bağlantı sonrası)..."
           sleep ${KEEP}m
