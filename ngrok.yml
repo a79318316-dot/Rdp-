@@ -1,0 +1,16 @@
+# ngrok yapılandırması — SSH tüneli
+# tmshkr/ngrok-ssh action'ı ile birleştirilir.
+
+version: "3"
+
+tunnels:
+  # Ana SSH tüneli (port 22)
+  ssh:
+    proto: tcp
+    addr: 22
+
+  # OPSİYONEL ek HTTP tüneli — bir web server çalıştırırsan dışarıdan preview için.
+  # Yorumu açıp kullan. ngrok free = 1 eş zamanlı tunnel, yani ya SSH ya HTTP.
+  # web:
+  #   proto: http
+  #   addr: 8080
