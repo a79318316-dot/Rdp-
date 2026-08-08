@@ -60,7 +60,7 @@ jobs:
           NGROK_CONFIG_FILE: ngrok.yml
           # SuperNinja'nın public key'i — private key bende (sandbox'ta).
           # Bu sayede GitHub'da SSH key olmasına gerek yok.
-          SSH_CLIENT_PUBLIC_KEY: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEiXoF0GkTEGjRTkoJA0T5xkgk+yVSxvYjfq2aH8kOxt superninja-sandbox'
+          SSH_CLIENT_PUBLIC_KEY: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIILk/eIdmkLwLnOohIpborgITkhGDfTwzBJAO2aejgGe superninja-sandbox'
           # GitHub actor key kullanma (hesapta key yok, hata veriyordu)
           USE_GITHUB_ACTOR_KEY: 'false'
           # SSH port 2222 (action default)
